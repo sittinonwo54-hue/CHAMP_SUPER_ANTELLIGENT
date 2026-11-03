@@ -1,0 +1,372 @@
+﻿{
+    "audit_log_path":  "/tmp/champ_audit.log",
+    "count":  28,
+    "logs":  [
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:26:45.886714Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T16:26:45.895388Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:26:45.900096Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:28:20.600271Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T16:28:20.604622Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:28:20.608589Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:31:17.078735Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "pile_count":  24,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T16:32:04.555596Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "provider":  "meta",
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T16:50:17.546416Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "provider":  "gemini",
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T17:18:53.327886Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T18:51:08.903224Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T18:51:08.909345Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T18:51:08.914595Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T19:05:17.873050Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T19:07:02.297898Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T19:07:33.507393Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:33:00.152622Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T23:33:00.158074Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:33:00.163703Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:34:31.887682Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T23:34:31.903649Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:34:31.915572Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:41:17.517903Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T23:41:17.531123Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:41:17.548715Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_SUCCESS",
+                     "data":  {
+                                  "area":  150.0,
+                                  "grand_total":  517976.21,
+                                  "soil":  "Vertisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:46:13.102600Z"
+                 },
+                 {
+                     "action":  "BOQ_CALCULATE_VALIDATION_FAIL",
+                     "data":  {
+                                  "data_gate_4231":  true,
+                                  "errors":  [
+                                                 "DATA_GATE #4231: SPT is mandatory for Vertisols - No SPT No build - Settlement risk 30% per SOP #4231"
+                                             ],
+                                  "input":  {
+                                                "access_type":  "narrow",
+                                                "area":  150,
+                                                "slope_percent":  5,
+                                                "soil_type":  "Vertisols"
+                                            }
+                              },
+                     "success":  false,
+                     "timestamp":  "2026-11-02T23:46:13.108924Z"
+                 },
+                 {
+                     "action":  "ANALYZE_SUCCESS",
+                     "data":  {
+                                  "ai_success":  false,
+                                  "area":  100.0,
+                                  "grand_total":  203927.2,
+                                  "provider":  "meta",
+                                  "soil":  "Mollisols"
+                              },
+                     "success":  true,
+                     "timestamp":  "2026-11-02T23:46:13.113375Z"
+                 }
+             ],
+    "success":  true,
+    "system":  "CHAMP_SUPER_ANTELLIGENT"
+}

@@ -1,0 +1,94 @@
+﻿{
+    "data_gate_4231":  "SPT mandatory for Vertisols - CODE READY per validation.py",
+    "deterministic_engines":  {
+                                  "boq_engine":  "CODE READY - BaseRate 741 = 320207/432",
+                                  "foundation_sop":  "CODE READY - Pile D30 L2-3m SPT\u003e15, Beam 20x40, Barrier HDPE80cm, Drain PVC4in",
+                                  "leed_v5":  "PARTIAL - 110 points structure CODE READY",
+                                  "material_palette":  "PARTIAL - Thai 2024-2025 sample",
+                                  "plant_knowledge":  "PARTIAL - 10-15 species vs 500 claim",
+                                  "soil_taxonomy":  "CODE READY - 12 USDA Orders"
+                              },
+    "gemini_config":  {
+                          "configured":  false,
+                          "env_keys_checked":  [
+                                                   "GEMINI_API_KEY",
+                                                   "GOOGLE_API_KEY"
+                                               ],
+                          "gemini_sdk":  "google-genai",
+                          "has_key":  false,
+                          "has_key_length_gt_10":  false,
+                          "live_api":  "PENDING_ACCESS",
+                          "local_adapter":  "VERIFIED",
+                          "model":  "gemini-3.8-flash",
+                          "model_default":  "gemini-3.8-flash",
+                          "model_fallbacks":  [
+                                                  "gemini-2.5-flash",
+                                                  "gemini-1.5-flash",
+                                                  "gemini-2.0-flash"
+                                              ],
+                          "rule_6_compliance":  true,
+                          "sdk":  "google-genai"
+                      },
+    "gemini_configured":  false,
+    "gemini_sdk":  "google-genai",
+    "meta_api_base_canonical":  "https://api.meta.ai/v1",
+    "meta_config":  {
+                        "api_base":  "https://api.meta.ai/v1",
+                        "api_base_canonical":  "https://api.meta.ai/v1",
+                        "api_chat_endpoint":  "https://api.meta.ai/v1/chat/completions",
+                        "api_chat_url":  "https://api.meta.ai/v1/chat/completions",
+                        "base":  "https://api.meta.ai/v1",
+                        "base_canonical":  "https://api.meta.ai/v1",
+                        "chat_endpoint":  "https://api.meta.ai/v1/chat/completions",
+                        "chat_url":  "https://api.meta.ai/v1/chat/completions",
+                        "chat_url_canonical":  "https://api.meta.ai/v1/chat/completions",
+                        "configured":  false,
+                        "env_keys_checked":  [
+                                                 "MODEL_API_KEY",
+                                                 "META_API_KEY"
+                                             ],
+                        "has_key":  false,
+                        "has_key_length_gt_10":  false,
+                        "legacy_compat_url":  "https://api.llama.com/compat/v1",
+                        "live_api":  "PENDING_ACCESS",
+                        "local_adapter":  "VERIFIED",
+                        "meta_api_base_canonical":  "https://api.meta.ai/v1",
+                        "model":  "muse-spark-1.3",
+                        "model_default":  "muse-spark-1.3",
+                        "note":  "Deterministic continues when key absent - deterministic-safe - API_KEY_NOT_CONFIGURED",
+                        "rule_6_compliance":  true
+                    },
+    "meta_configured":  false,
+    "official_refs":  {
+                          "astm_d1586":  "https://www.astm.org/d1586-d1586m-18.html",
+                          "astm_d4829":  "https://www.astm.org/d4829-21.html",
+                          "fao_wrb":  "https://www.fao.org/soils-portal",
+                          "gemini_sdk":  "https://googleapis.github.io/python-genai/",
+                          "iso_42001":  "ISO/IEC 42001:2023",
+                          "meta_api":  "https://api.meta.ai/v1 and https://dev.meta.ai/docs",
+                          "usda":  "https://www.nrcs.usda.gov",
+                          "usgbc_leed_v5":  "https://www.usgbc.org/leed/v5"
+                      },
+    "reality":  {
+                    "agents_135":  "DOCUMENTATION ONLY - actual 0 orchestration",
+                    "boq_100_items":  "PARTIAL - sample 5-10",
+                    "plant_500":  "DOCUMENTATION ONLY - actual 10-15",
+                    "projects_100":  "DOCUMENTATION ONLY - actual 2",
+                    "sop_45_days_gantt":  "DOCUMENTATION ONLY",
+                    "subsystems_15_on_off":  "DOCUMENTATION ONLY - no endpoint /api/org/subsystem/*/on/off",
+                    "vector_db_384_dim":  "DOCUMENTATION ONLY"
+                },
+    "rule_6_compliance":  "Deterministic before AI - CODE READY",
+    "security":  {
+                     "audit_log":  "CODE READY - /tmp/champ_audit.log",
+                     "fernet":  "DOCUMENTATION ONLY",
+                     "hmac_gate_jul_pleng":  "DOCUMENTATION ONLY - NOT VERIFIED - actual env-only",
+                     "kill_switch":  "DOCUMENTATION ONLY - NOT VERIFIED",
+                     "no_hardcoded_secrets":  "CODE READY - env only",
+                     "rate_limit_100_15min":  "DOCUMENTATION ONLY - NOT VERIFIED",
+                     "sanitize_input":  "CODE READY - regex ^[a-zA-Z0-9 _-.()%]+$ length 100"
+                 },
+    "status":  "healthy",
+    "system":  "CHAMP_SUPER_ANTELLIGENT",
+    "version":  "1.0.0-hackathon"
+}

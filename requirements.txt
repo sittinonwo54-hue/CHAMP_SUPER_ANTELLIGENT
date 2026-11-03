@@ -1,0 +1,10 @@
+# CHAMP_SUPER_ANTELLIGENT - requirements.txt - per APP_PY_FIXED.md
+# Dependencies - CODE READY
+Flask==3.0.3
+Flask-Cors==4.0.1
+requests==2.32.3
+python-dotenv==1.0.1
+gunicorn==22.0.0
+google-genai>=0.3.0
+pytest==8.3.3
+pytest-cov==6.0.0
