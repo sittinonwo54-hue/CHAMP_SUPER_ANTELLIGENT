@@ -1,80 +1,262 @@
-
 """
-app.py - CHAMP_SUPER_ANTELLIGENT - CANONICAL RUNTIME per APP_PY_FIXED.md
+app.py - CHAMP_SUPER_ANTELLIGENT - CANONICAL RUNTIME
+
 Pipeline:
 USER INPUT
-  ↓
-VALIDATION (validation.py - DATA_GATE #4231)
-  ↓
+  |
+  v
+VALIDATION (utils/validation.py - DATA_GATE #4231)
+  |
+  v
 DETERMINISTIC DOMAIN ENGINE (6 engines)
-  ↓
+  |
+  v
 VERIFIED BOQ / SOIL / SITE RESULT
-  ↓
-AI PROVIDER (Meta OR Gemini) - EXPLANATION ONLY per Rule 6
-  ↓
+  |
+  v
+AI PROVIDER (Meta OR Gemini OR Modal) - EXPLANATION ONLY
+  |
+  v
 STRUCTURED RESPONSE
-  ↓
-AUDIT LOG (audit.py)
+  |
+  v
+AUDIT LOG (utils/audit.py)
 
-Endpoints:
-GET / - root
-GET /api/health - health check with meta_api_base_canonical = https://api.meta.ai/v1, gemini_sdk = google-genai, rule_6_compliance
-POST /api/boq/calculate - BOQ deterministic
-POST /api/analyze-landscape - full pipeline with deterministic first, AI explanation second
-GET /api/audit/logs - audit logs
+Core API endpoints:
+GET  /
+GET  /api/health
+POST /api/boq/calculate
+POST /api/analyze-landscape
+GET  /api/audit/logs
+POST /api/soil/classify
+POST /api/foundation/design
 
-Security:
-- No hardcoded secrets - env only
-- Missing API key does NOT crash - returns API_KEY_NOT_CONFIGURED per APP_PY_FIXED.md
-- sanitize_input regex ^[a-zA-Z0-9 _-.()%]+$ length 100
-- DATA_GATE #4231 SPT mandatory for Vertisols
-- Audit logging to /tmp/champ_audit.log
-- CORS enabled
-- Rule 6 compliance: deterministic summary built BEFORE AI call, LLM must NOT invent BOQ values
-
-Dependencies: Flask==3.0.3, Flask-Cors==4.0.1, requests==2.32.3, python-dotenv==1.0.1, gunicorn==22.0.0, google-genai>=0.3.0
-
-Actual runtime reality vs old doc:
-OLD DOC claimed Node.js Express stack - DOCUMENTATION ONLY - NOT VERIFIED
-REALITY: Flask garden AI - BOQ calculation, soil taxonomy, foundation SOP, Meta/Gemini explanation - CODE READY
+Security and evidence rules:
+- No hardcoded secrets
+- Provider credentials come from environment variables only
+- Missing provider keys do not terminate deterministic processing
+- DATA_GATE #4231 requires SPT for Vertisols
+- Deterministic results are generated before the AI call
+- AI providers explain verified results only
+- Unknown providers are rejected
+- Audit events record the provider actually selected
 """
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import os
 import sys
+import traceback
+from typing import Any, Callable, Dict, Tuple
 
-# Ensure local imports work
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
-# Werkzeug fallback shim for offline per APP_PY_FIXED.md
-try:
-    from werkzeug.serving import run_simple
-except ImportError:
-    run_simple = None
 
-from utils.validation import validate_landscape_input, sanitize_input
+# ---------------------------------------------------------------------------
+# Local import path
+# ---------------------------------------------------------------------------
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+from utils.validation import validate_landscape_input
 from utils.audit import audit_log, get_audit_logs
 
-# Engines - 6 deterministic engines - CODE READY per reality check
-from engines.boq_engine import calculate_boq, BASE_RATE, BASE_RATE_EXACT
-from engines.soil_engine import classify_soil, get_all_usda_orders, get_all_wrb_groups
+
+# ---------------------------------------------------------------------------
+# Deterministic engines
+# ---------------------------------------------------------------------------
+
+from engines.boq_engine import calculate_boq
+from engines.soil_engine import classify_soil
 from engines.foundation_engine import design_foundation
-from engines.plant_engine import select_plants, get_all_plants
+from engines.plant_engine import select_plants
 from engines.material_engine import get_material_palette
 from engines.leed_engine import calculate_leed
 
-# Adapters - 2 AI adapters - CODE READY
-from adapters.meta_adapter import generate_explanation as meta_explain, get_config_status as meta_config, is_configured as meta_configured, META_API_BASE_CANONICAL
-from adapters.gemini_adapter import generate_explanation as gemini_explain, get_config_status as gemini_config, is_configured as gemini_configured
+
+# ---------------------------------------------------------------------------
+# AI provider adapters
+# ---------------------------------------------------------------------------
+
+from adapters.meta_adapter import (
+    META_API_BASE_CANONICAL,
+    generate_explanation as meta_explain,
+    get_config_status as meta_config,
+    is_configured as meta_configured,
+)
+
+from adapters.gemini_adapter import (
+    generate_explanation as gemini_explain,
+    get_config_status as gemini_config,
+    is_configured as gemini_configured,
+)
+
+from adapters.modal_adapter import (
+    generate_explanation as modal_explain,
+    get_config_status as modal_config,
+    is_configured as modal_configured,
+)
+
+
+# ---------------------------------------------------------------------------
+# Flask application
+# ---------------------------------------------------------------------------
 
 app = Flask(__name__)
 CORS(app)
 
-# System identity per INDEX_CARD_REAL_DATA_ONLY.md
+
+# ---------------------------------------------------------------------------
+# System identity
+# ---------------------------------------------------------------------------
+
 SYSTEM_NAME = "CHAMP_SUPER_ANTELLIGENT"
 VERSION = "1.0.0-hackathon"
 TAGLINE = "Architecture Meets Nature Enhanced by AI"
+
+SUPPORTED_PROVIDERS = ("meta", "gemini", "modal")
+
+AIProviderFunction = Callable[
+    [Dict[str, Any], str],
+    Dict[str, Any],
+]
+
+
+# ---------------------------------------------------------------------------
+# Common response helpers
+# ---------------------------------------------------------------------------
+
+def error_response(
+    error: str,
+    status_code: int,
+    message: str,
+    **extra: Any,
+):
+    """
+    Return a controlled API error without exposing an internal traceback.
+    """
+
+    payload: Dict[str, Any] = {
+        "success": False,
+        "system": SYSTEM_NAME,
+        "error": error,
+        "message": message,
+    }
+
+    payload.update(extra)
+
+    return jsonify(payload), status_code
+
+
+def normalize_provider(raw_provider: Any) -> str:
+    """
+    Normalize the provider field without silently routing an invalid value.
+    """
+
+    if raw_provider is None:
+        return "meta"
+
+    if not isinstance(raw_provider, str):
+        raise ValueError("Provider must be a string")
+
+    provider = raw_provider.strip().lower()
+
+    if not provider:
+        return "meta"
+
+    return provider
+
+
+def provider_registry() -> Dict[str, AIProviderFunction]:
+    """
+    Explicit provider registry.
+
+    This prevents provider=modal or an unknown provider from falling through
+    to Meta while the response reports a different provider.
+    """
+
+    return {
+        "meta": meta_explain,
+        "gemini": gemini_explain,
+        "modal": modal_explain,
+    }
+
+
+def execute_ai_provider(
+    provider: str,
+    deterministic_result: Dict[str, Any],
+    user_prompt: str,
+) -> Tuple[Dict[str, Any], str]:
+    """
+    Execute only the selected provider.
+
+    Provider failures do not modify or recalculate deterministic results.
+    """
+
+    providers = provider_registry()
+
+    if provider not in providers:
+        raise ValueError(
+            "Unsupported provider. Supported providers: "
+            + ", ".join(SUPPORTED_PROVIDERS)
+        )
+
+    provider_function = providers[provider]
+
+    try:
+        result = provider_function(
+            deterministic_result,
+            user_prompt,
+        )
+
+        if not isinstance(result, dict):
+            return {
+                "success": False,
+                "error": "INVALID_PROVIDER_RESPONSE",
+                "error_code": "INVALID_PROVIDER_RESPONSE",
+                "explanation": (
+                    "Verified deterministic result remains unchanged."
+                ),
+                "verified_context_used": deterministic_result,
+                "source": "LOCAL_FALLBACK_INVALID_RESPONSE",
+            }, provider
+
+        return result, provider
+
+    except Exception as exc:
+        audit_log(
+            "AI_PROVIDER_EXCEPTION",
+            {
+                "provider": provider,
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+            success=False,
+        )
+
+        return {
+            "success": False,
+            "error": "AI_PROVIDER_EXCEPTION",
+            "error_code": "AI_PROVIDER_EXCEPTION",
+            "detail": str(exc)[:500],
+            "explanation": (
+                "Verified deterministic result remains unchanged."
+            ),
+            "verified_context_used": deterministic_result,
+            "source": "LOCAL_FALLBACK_PROVIDER_EXCEPTION",
+        }, provider
+
+
+# ---------------------------------------------------------------------------
+# Root
+# ---------------------------------------------------------------------------
 
 @app.route("/", methods=["GET"])
 def root():
@@ -82,154 +264,389 @@ def root():
         "system": SYSTEM_NAME,
         "version": VERSION,
         "tagline": TAGLINE,
-        "canonical_folder": "https://drive.google.com/drive/folders/1OCimGhRhg-QazMl_30u7Yk2axais-Vr7",
-        "architecture": "USER INPUT → VALIDATION (DATA_GATE #4231) → DETERMINISTIC DOMAIN ENGINE (6 engines) → VERIFIED RESULT → AI EXPLANATION ONLY → RESPONSE → AUDIT",
-        "deterministic_engines": ["BOQ_ENGINE BaseRate 741", "SOIL_TAXONOMY 12 USDA Orders", "FOUNDATION_SOP Pile D30", "PLANT_KNOWLEDGE limited", "MATERIAL_PALETTE Thai 2024-2025", "LEED_V5 110pts"],
-        "ai_adapters": ["Meta https://api.meta.ai/v1/chat/completions muse-spark-1.3", "Gemini google-genai gemini-3.8-flash"],
-        "endpoints": ["/", "/api/health", "/api/boq/calculate", "/api/analyze-landscape", "/api/audit/logs"],
-        "evidence": "Evidence > Claims - Repair > Rebuild - One CHAMP > Many Versions",
-        "rule_6_compliance": "LLM must NOT invent BOQ values - deterministic summary built BEFORE AI call",
-        "real_projects": {"88_1": "432sqm 320207 THB BaseRate 741 = 320207/432=741.21 validated 0.03% deviation", "PJ0014": "150sqm Vertisols 55% Narrow Slope 5% SPT 8 311753 THB vs runtime 510277.73 NOT VERIFIED per Rule 7"},
-        "reality_check": "135 Agents DOCUMENTATION ONLY - actual 6 engines + 2 adapters - Plant 500 CLAIM vs 10-15 actual PARTIAL - Real Projects 100 CLAIM vs 2 actual PARTIAL"
+        "architecture": (
+            "USER INPUT -> VALIDATION (DATA_GATE #4231) -> "
+            "DETERMINISTIC DOMAIN ENGINE (6 engines) -> "
+            "VERIFIED RESULT -> AI EXPLANATION ONLY -> RESPONSE -> AUDIT"
+        ),
+        "deterministic_engines": [
+            "BOQ_ENGINE BaseRate 741",
+            "SOIL_TAXONOMY 12 USDA Orders",
+            "FOUNDATION_SOP Pile D30",
+            "PLANT_KNOWLEDGE limited",
+            "MATERIAL_PALETTE Thai 2024-2025",
+            "LEED_V5 110pts",
+        ],
+        "ai_adapters": [
+            "Meta",
+            "Gemini google-genai",
+            "Modal Muse Spark Open",
+        ],
+        "supported_providers": list(SUPPORTED_PROVIDERS),
+        "endpoints": [
+            "/",
+            "/api/health",
+            "/api/boq/calculate",
+            "/api/analyze-landscape",
+            "/api/audit/logs",
+            "/api/soil/classify",
+            "/api/foundation/design",
+        ],
+        "evidence": (
+            "Evidence > Claims - Repair > Rebuild - "
+            "One CHAMP > Many Versions"
+        ),
+        "rule_6_compliance": (
+            "LLM must not invent BOQ values. "
+            "Deterministic results are built before the AI call."
+        ),
+        "reality_check": {
+            "deterministic_engines": 6,
+            "ai_adapters_wired": 3,
+            "plant_knowledge": "PARTIAL",
+            "material_palette": "PARTIAL",
+            "leed_v5": "PARTIAL",
+        },
     })
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    meta_status = meta_config()
-    gemini_status = gemini_config()
-    return jsonify({
-        "status": "healthy",
-        "system": SYSTEM_NAME,
-        "version": VERSION,
-        "meta_api_base_canonical": META_API_BASE_CANONICAL,
-        "meta_config": meta_status,
-        "meta_configured": meta_configured(),
-        "gemini_sdk": "google-genai",
-        "gemini_config": gemini_status,
-        "gemini_configured": gemini_configured(),
-        "rule_6_compliance": "Deterministic before AI - CODE READY",
-        "data_gate_4231": "SPT mandatory for Vertisols - CODE READY per validation.py",
-        "deterministic_engines": {
-            "boq_engine": "CODE READY - BaseRate 741 = 320207/432",
-            "soil_taxonomy": "CODE READY - 12 USDA Orders",
-            "foundation_sop": "CODE READY - Pile D30 L2-3m SPT>15, Beam 20x40, Barrier HDPE80cm, Drain PVC4in",
-            "plant_knowledge": "PARTIAL - 10-15 species vs 500 claim",
-            "material_palette": "PARTIAL - Thai 2024-2025 sample",
-            "leed_v5": "PARTIAL - 110 points structure CODE READY"
-        },
-        "security": {
-            "no_hardcoded_secrets": "CODE READY - env only",
-            "sanitize_input": "CODE READY - regex ^[a-zA-Z0-9 _-.()%]+$ length 100",
-            "audit_log": "CODE READY - /tmp/champ_audit.log",
-            "hmac_gate_jul_pleng": "DOCUMENTATION ONLY - NOT VERIFIED - actual env-only",
-            "rate_limit_100_15min": "DOCUMENTATION ONLY - NOT VERIFIED",
-            "fernet": "DOCUMENTATION ONLY",
-            "kill_switch": "DOCUMENTATION ONLY - NOT VERIFIED"
-        },
-        "reality": {
-            "agents_135": "DOCUMENTATION ONLY - actual 0 orchestration",
-            "subsystems_15_on_off": "DOCUMENTATION ONLY - no endpoint /api/org/subsystem/*/on/off",
-            "plant_500": "DOCUMENTATION ONLY - actual 10-15",
-            "projects_100": "DOCUMENTATION ONLY - actual 2",
-            "boq_100_items": "PARTIAL - sample 5-10",
-            "sop_45_days_gantt": "DOCUMENTATION ONLY",
-            "vector_db_384_dim": "DOCUMENTATION ONLY"
-        },
-        "official_refs": {
-            "meta_api": "https://api.meta.ai/v1 and https://dev.meta.ai/docs",
-            "gemini_sdk": "https://googleapis.github.io/python-genai/",
-            "usda": "https://www.nrcs.usda.gov",
-            "fao_wrb": "https://www.fao.org/soils-portal",
-            "astm_d1586": "https://www.astm.org/d1586-d1586m-18.html",
-            "astm_d4829": "https://www.astm.org/d4829-21.html",
-            "usgbc_leed_v5": "https://www.usgbc.org/leed/v5",
-            "iso_42001": "ISO/IEC 42001:2023"
-        }
-    })
+    """
+    Configuration health check.
+
+    This endpoint checks local adapter configuration. It does not claim that
+    an external provider is live unless the adapter reports that evidence.
+    """
+
+    try:
+        meta_status = meta_config()
+        gemini_status = gemini_config()
+        modal_status = modal_config()
+
+        return jsonify({
+            "status": "healthy",
+            "system": SYSTEM_NAME,
+            "version": VERSION,
+            "supported_providers": list(SUPPORTED_PROVIDERS),
+
+            "meta_api_base_canonical": META_API_BASE_CANONICAL,
+            "meta_config": meta_status,
+            "meta_configured": meta_configured(),
+
+            "gemini_sdk": "google-genai",
+            "gemini_config": gemini_status,
+            "gemini_configured": gemini_configured(),
+
+            "modal_config": modal_status,
+            "modal_configured": modal_configured(),
+
+            "rule_6_compliance": (
+                "Deterministic result before AI explanation"
+            ),
+            "data_gate_4231": (
+                "SPT mandatory for Vertisols per validation.py"
+            ),
+
+            "deterministic_engines": {
+                "boq_engine": "CODE READY",
+                "soil_taxonomy": "CODE READY",
+                "foundation_sop": "CODE READY",
+                "plant_knowledge": "PARTIAL",
+                "material_palette": "PARTIAL",
+                "leed_v5": "PARTIAL",
+            },
+
+            "security": {
+                "no_hardcoded_secrets": True,
+                "credentials_source": "ENVIRONMENT_VARIABLES",
+                "audit_log": "/tmp/champ_audit.log",
+                "rate_limiting": "NOT_IMPLEMENTED",
+                "api_authentication": "NOT_IMPLEMENTED",
+                "audit_endpoint_authentication": "NOT_IMPLEMENTED",
+            },
+
+            "reality": {
+                "agents_135": "DOCUMENTATION_ONLY",
+                "subsystems_15_on_off": "DOCUMENTATION_ONLY",
+                "plant_500": "DOCUMENTATION_ONLY",
+                "projects_100": "DOCUMENTATION_ONLY",
+                "vector_db_384_dim": "DOCUMENTATION_ONLY",
+            },
+        })
+
+    except Exception as exc:
+        audit_log(
+            "HEALTH_CHECK_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="HEALTH_CHECK_ERROR",
+            status_code=500,
+            message="Health configuration check failed",
+        )
+
+
+# ---------------------------------------------------------------------------
+# BOQ
+# ---------------------------------------------------------------------------
 
 @app.route("/api/boq/calculate", methods=["POST"])
 def boq_calculate():
+    data: Dict[str, Any] = {}
+
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
+
+        if not isinstance(data, dict):
+            return error_response(
+                error="INVALID_JSON_BODY",
+                status_code=400,
+                message="JSON body must be an object",
+            )
+
         valid, normalized, errors = validate_landscape_input(data)
-        
+
         if not valid:
-            # Check if DATA_GATE #4231
-            has_data_gate = any("DATA_GATE #4231" in e for e in errors)
-            audit_log("BOQ_CALCULATE_VALIDATION_FAIL", {"input": data, "errors": errors, "data_gate_4231": has_data_gate}, success=False)
-            status_code = 400 if not has_data_gate else 422
+            has_data_gate = any(
+                "DATA_GATE #4231" in error
+                for error in errors
+            )
+
+            audit_log(
+                "BOQ_CALCULATE_VALIDATION_FAIL",
+                {
+                    "input": data,
+                    "errors": errors,
+                    "data_gate_4231": has_data_gate,
+                },
+                success=False,
+            )
+
+            status_code = 422 if has_data_gate else 400
+
             return jsonify({
                 "success": False,
+                "system": SYSTEM_NAME,
                 "error": "VALIDATION_FAILED",
-                "data_gate": "DATA_GATE #4231" if has_data_gate else "GENERAL_VALIDATION",
+                "data_gate": (
+                    "DATA_GATE #4231"
+                    if has_data_gate
+                    else "GENERAL_VALIDATION"
+                ),
                 "errors": errors,
                 "normalized": normalized,
-                "evidence": "No SPT No build - SPT 3 points Depth 6m ASTM D1586 mandatory for Vertisols per #4231"
+                "evidence": (
+                    "SPT is mandatory for Vertisols. "
+                    "No SPT, no deterministic build result."
+                ),
             }), status_code
-        
-        # Deterministic calculation
+
         boq_result = calculate_boq(
-            area=normalized['area'],
-            soil_type=normalized['soil_type'],
-            slope_percent=normalized['slope_percent'],
-            access_type=normalized['access_type'],
-            spt=normalized.get('spt'),
-            pile_count=normalized.get('pile_count', 24)
+            area=normalized["area"],
+            soil_type=normalized["soil_type"],
+            slope_percent=normalized["slope_percent"],
+            access_type=normalized["access_type"],
+            spt=normalized.get("spt"),
+            pile_count=normalized.get("pile_count", 24),
         )
-        
-        audit_log("BOQ_CALCULATE_SUCCESS", {"area": normalized['area'], "soil": normalized['soil_type'], "grand_total": boq_result['grand_total']}, success=True)
-        
+
+        audit_log(
+            "BOQ_CALCULATE_SUCCESS",
+            {
+                "area": normalized["area"],
+                "soil": normalized["soil_type"],
+                "grand_total": boq_result["grand_total"],
+            },
+            success=True,
+        )
+
         return jsonify({
             "success": True,
             "system": SYSTEM_NAME,
-            "engine": "BOQ_ENGINE - BaseRate 741 = 320207/432 - CODE READY",
+            "engine": "BOQ_ENGINE",
             "input_normalized": normalized,
             "boq": boq_result,
-            "validation": {"valid": valid, "errors": errors},
-            "reality_notes": {
-                "base_rate_validation_88_1": "432*741=320112 vs invoice 320207 deviation 0.03% - CODE READY base alone",
-                "double_count_risk": "With add-ons 681707 vs 320207 = 112% over - indicates BaseRate already includes components",
-                "pj0014": "Reference 311753 vs runtime 510277.73 for same inputs - PJ0014_CALIBRATION = NOT VERIFIED per Rule 7 - keep truthful"
-            }
+            "validation": {
+                "valid": valid,
+                "errors": errors,
+            },
+            "evidence_status": {
+                "base_rate_validation_88_1": "CODE_READY",
+                "pj0014_calibration": "NOT_VERIFIED",
+                "double_count_risk": "REQUIRES_REVIEW",
+            },
         })
-    except Exception as e:
-        audit_log("BOQ_CALCULATE_ENGINE_ERROR", {"error": str(e), "input": request.get_json()}, success=False)
-        return jsonify({"success": False, "error": "ENGINE_ERROR", "message": str(e)}), 500
+
+    except Exception as exc:
+        audit_log(
+            "BOQ_CALCULATE_ENGINE_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+                "input": data,
+                "trace": traceback.format_exc()[:1000],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="ENGINE_ERROR",
+            status_code=500,
+            message="BOQ calculation failed",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Full landscape analysis
+# ---------------------------------------------------------------------------
 
 @app.route("/api/analyze-landscape", methods=["POST"])
 def analyze_landscape():
     """
-    Full pipeline per APP_PY_FIXED.md:
-    USER INPUT -> VALIDATION (DATA_GATE #4231) -> DETERMINISTIC DOMAIN ENGINE -> VERIFIED RESULT -> AI EXPLANATION ONLY -> STRUCTURED RESPONSE -> AUDIT
-    Rule 6 compliance: deterministic summary built BEFORE AI call, LLM must NOT invent BOQ values
+    Full deterministic-first pipeline.
+
+    The AI provider is allowed to explain the deterministic result only.
+    The AI provider must not replace or recalculate BOQ/domain values.
     """
+
+    data: Dict[str, Any] = {}
+
     try:
-        data = request.get_json() or {}
-        user_prompt = data.get('prompt', data.get('query', 'Analyze landscape project'))
-        
-        valid, normalized, errors = validate_landscape_input(data)
-        if not valid:
-            has_data_gate = any("DATA_GATE #4231" in e for e in errors)
-            audit_log("ANALYZE_VALIDATION_FAIL", {"input": data, "errors": errors}, success=False)
-            return jsonify({"success": False, "error": "VALIDATION_FAILED", "data_gate": "DATA_GATE #4231" if has_data_gate else "GENERAL", "errors": errors}), 400 if not has_data_gate else 422
-        
-        # DETERMINISTIC DOMAIN ENGINES - 6 engines - CODE READY
-        boq_result = calculate_boq(
-            area=normalized['area'],
-            soil_type=normalized['soil_type'],
-            slope_percent=normalized['slope_percent'],
-            access_type=normalized['access_type'],
-            spt=normalized.get('spt'),
-            pile_count=normalized.get('pile_count', 24)
+        data = request.get_json(silent=True) or {}
+
+        if not isinstance(data, dict):
+            return error_response(
+                error="INVALID_JSON_BODY",
+                status_code=400,
+                message="JSON body must be an object",
+            )
+
+        user_prompt_raw = data.get(
+            "prompt",
+            data.get("query", "Analyze landscape project"),
         )
-        
-        soil_result = classify_soil(normalized['soil_type'], normalized.get('spt'))
-        foundation_result = design_foundation(normalized['area'], normalized['soil_type'], normalized.get('spt'), normalized['slope_percent'])
-        plants_result = select_plants(normalized['soil_type'], normalized['area'])
-        material_result = get_material_palette(normalized['area'])
-        leed_result = calculate_leed(normalized['area'], normalized['soil_type'], plants_result['count'])
-        
-        # VERIFIED DOMAIN RESULT - deterministic
+
+        user_prompt = str(user_prompt_raw)[:2000]
+
+        try:
+            requested_provider = normalize_provider(
+                data.get(
+                    "provider",
+                    data.get("ai_provider", "meta"),
+                )
+            )
+        except ValueError as exc:
+            return error_response(
+                error="INVALID_PROVIDER",
+                status_code=400,
+                message=str(exc),
+                supported_providers=list(SUPPORTED_PROVIDERS),
+            )
+
+        if requested_provider not in SUPPORTED_PROVIDERS:
+            audit_log(
+                "ANALYZE_UNSUPPORTED_PROVIDER",
+                {
+                    "requested_provider": requested_provider,
+                    "supported_providers": list(SUPPORTED_PROVIDERS),
+                },
+                success=False,
+            )
+
+            return error_response(
+                error="UNSUPPORTED_PROVIDER",
+                status_code=400,
+                message=(
+                    f"Provider '{requested_provider}' is not supported"
+                ),
+                requested_provider=requested_provider,
+                supported_providers=list(SUPPORTED_PROVIDERS),
+            )
+
+        valid, normalized, errors = validate_landscape_input(data)
+
+        if not valid:
+            has_data_gate = any(
+                "DATA_GATE #4231" in error
+                for error in errors
+            )
+
+            audit_log(
+                "ANALYZE_VALIDATION_FAIL",
+                {
+                    "input": data,
+                    "errors": errors,
+                    "requested_provider": requested_provider,
+                },
+                success=False,
+            )
+
+            status_code = 422 if has_data_gate else 400
+
+            return jsonify({
+                "success": False,
+                "system": SYSTEM_NAME,
+                "error": "VALIDATION_FAILED",
+                "data_gate": (
+                    "DATA_GATE #4231"
+                    if has_data_gate
+                    else "GENERAL_VALIDATION"
+                ),
+                "errors": errors,
+            }), status_code
+
+        # -------------------------------------------------------------------
+        # Deterministic domain processing
+        # -------------------------------------------------------------------
+
+        boq_result = calculate_boq(
+            area=normalized["area"],
+            soil_type=normalized["soil_type"],
+            slope_percent=normalized["slope_percent"],
+            access_type=normalized["access_type"],
+            spt=normalized.get("spt"),
+            pile_count=normalized.get("pile_count", 24),
+        )
+
+        soil_result = classify_soil(
+            normalized["soil_type"],
+            normalized.get("spt"),
+        )
+
+        foundation_result = design_foundation(
+            normalized["area"],
+            normalized["soil_type"],
+            normalized.get("spt"),
+            normalized["slope_percent"],
+        )
+
+        plants_result = select_plants(
+            normalized["soil_type"],
+            normalized["area"],
+        )
+
+        material_result = get_material_palette(
+            normalized["area"],
+        )
+
+        plant_count = plants_result.get("count", 0)
+
+        leed_result = calculate_leed(
+            normalized["area"],
+            normalized["soil_type"],
+            plant_count,
+        )
+
         deterministic_result = {
             "boq": boq_result,
             "soil": soil_result,
@@ -237,79 +654,260 @@ def analyze_landscape():
             "plants": plants_result,
             "material": material_result,
             "leed": leed_result,
-            "input_normalized": normalized
+            "input_normalized": normalized,
         }
-        
-        # AI EXPLANATION LAYER - EXPLANATION ONLY per Rule 6 - must NOT invent BOQ values
-        # Deterministic summary built BEFORE AI call per CANONICAL_GATE.md
-        provider = data.get('provider', data.get('ai_provider', 'meta')).lower()
-        if provider == 'gemini':
-            ai_result = gemini_explain(deterministic_result, user_prompt)
-        else:
-            ai_result = meta_explain(deterministic_result, user_prompt)
-        
-        # STRUCTURED RESPONSE
+
+        # -------------------------------------------------------------------
+        # AI explanation only
+        # -------------------------------------------------------------------
+
+        ai_result, actual_provider = execute_ai_provider(
+            requested_provider,
+            deterministic_result,
+            user_prompt,
+        )
+
         response = {
             "success": True,
             "system": SYSTEM_NAME,
             "version": VERSION,
-            "pipeline": "USER INPUT -> VALIDATION -> DETERMINISTIC DOMAIN ENGINE (6) -> VERIFIED RESULT -> AI EXPLANATION ONLY -> RESPONSE -> AUDIT",
-            "rule_6_compliance": "Deterministic summary built BEFORE AI call - AI returns explanation only, BOQ numbers from calculate_boq() only - CODE READY",
+            "pipeline": (
+                "USER INPUT -> VALIDATION -> "
+                "DETERMINISTIC DOMAIN ENGINE (6) -> "
+                "VERIFIED RESULT -> AI EXPLANATION ONLY -> "
+                "RESPONSE -> AUDIT"
+            ),
+            "rule_6_compliance": (
+                "Deterministic result built before AI call. "
+                "AI explanation cannot replace BOQ numbers."
+            ),
             "input_normalized": normalized,
             "deterministic_result": deterministic_result,
             "ai_explanation": ai_result,
-            "ai_provider_used": provider,
-            "meta_config_status": meta_config(),
-            "gemini_config_status": gemini_config(),
-            "missing_api_key_behavior": "Returns API_KEY_NOT_CONFIGURED no crash per APP_PY_FIXED.md - CODE READY",
-            "audit": "Logged to /tmp/champ_audit.log"
+            "ai_provider_requested": requested_provider,
+            "ai_provider_used": actual_provider,
+            "provider_evidence_consistent": (
+                requested_provider == actual_provider
+            ),
+            "provider_config_status": {
+                "meta": meta_config(),
+                "gemini": gemini_config(),
+                "modal": modal_config(),
+            },
+            "missing_api_key_behavior": (
+                "Deterministic result remains available and "
+                "the selected adapter returns a controlled fallback."
+            ),
+            "audit": "Logged to /tmp/champ_audit.log",
         }
-        
-        audit_log("ANALYZE_SUCCESS", {"area": normalized['area'], "soil": normalized['soil_type'], "grand_total": boq_result['grand_total'], "provider": provider, "ai_success": ai_result.get('success', False)}, success=True)
-        
+
+        audit_log(
+            "ANALYZE_SUCCESS",
+            {
+                "area": normalized["area"],
+                "soil": normalized["soil_type"],
+                "grand_total": boq_result["grand_total"],
+                "provider_requested": requested_provider,
+                "provider_used": actual_provider,
+                "provider_evidence_consistent": (
+                    requested_provider == actual_provider
+                ),
+                "ai_success": ai_result.get("success", False),
+                "ai_source": ai_result.get("source"),
+            },
+            success=True,
+        )
+
         return jsonify(response)
-    
-    except Exception as e:
-        import traceback
-        audit_log("ANALYZE_ENGINE_ERROR", {"error": str(e), "trace": traceback.format_exc()[:500]}, success=False)
-        return jsonify({"success": False, "error": "ENGINE_ERROR", "message": str(e)}), 500
+
+    except Exception as exc:
+        audit_log(
+            "ANALYZE_ENGINE_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+                "trace": traceback.format_exc()[:1000],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="ENGINE_ERROR",
+            status_code=500,
+            message="Landscape analysis failed",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
 
 @app.route("/api/audit/logs", methods=["GET"])
 def audit_logs():
     try:
-        limit = int(request.args.get('limit', 50))
-        logs = get_audit_logs(limit)
-        return jsonify({"success": True, "system": SYSTEM_NAME, "audit_log_path": "/tmp/champ_audit.log", "count": len(logs), "logs": logs})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        raw_limit = request.args.get("limit", "50")
 
-# Additional endpoint for plant/material/leed direct access - convenience not required but useful for hackathon
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return error_response(
+                error="INVALID_LIMIT",
+                status_code=400,
+                message="limit must be an integer",
+            )
+
+        limit = max(1, min(limit, 100))
+
+        logs = get_audit_logs(limit)
+
+        return jsonify({
+            "success": True,
+            "system": SYSTEM_NAME,
+            "audit_log_path": "/tmp/champ_audit.log",
+            "count": len(logs),
+            "limit": limit,
+            "logs": logs,
+            "security_notice": (
+                "Application-level authentication is not yet implemented "
+                "for this endpoint."
+            ),
+        })
+
+    except Exception as exc:
+        audit_log(
+            "AUDIT_LOG_READ_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="AUDIT_LOG_READ_ERROR",
+            status_code=500,
+            message="Unable to read audit logs",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Soil classification
+# ---------------------------------------------------------------------------
+
 @app.route("/api/soil/classify", methods=["POST"])
 def soil_classify():
     try:
-        data = request.get_json() or {}
-        soil_type = data.get('soil_type', 'Mollisols')
-        spt = data.get('spt')
-        result = classify_soil(soil_type, spt)
-        return jsonify({"success": True, "soil": result})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        data = request.get_json(silent=True) or {}
+
+        if not isinstance(data, dict):
+            return error_response(
+                error="INVALID_JSON_BODY",
+                status_code=400,
+                message="JSON body must be an object",
+            )
+
+        soil_type = data.get("soil_type", "Mollisols")
+        spt = data.get("spt")
+
+        result = classify_soil(
+            soil_type,
+            spt,
+        )
+
+        return jsonify({
+            "success": True,
+            "system": SYSTEM_NAME,
+            "soil": result,
+        })
+
+    except Exception as exc:
+        audit_log(
+            "SOIL_CLASSIFY_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="SOIL_CLASSIFY_ERROR",
+            status_code=500,
+            message="Soil classification failed",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Foundation design
+# ---------------------------------------------------------------------------
 
 @app.route("/api/foundation/design", methods=["POST"])
 def foundation_design():
     try:
-        data = request.get_json() or {}
-        result = design_foundation(data.get('area',100), data.get('soil_type','Mollisols'), data.get('spt'), data.get('slope_percent',0))
-        return jsonify({"success": True, "foundation": result})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        data = request.get_json(silent=True) or {}
+
+        if not isinstance(data, dict):
+            return error_response(
+                error="INVALID_JSON_BODY",
+                status_code=400,
+                message="JSON body must be an object",
+            )
+
+        area = data.get("area", 100)
+        soil_type = data.get("soil_type", "Mollisols")
+        spt = data.get("spt")
+        slope_percent = data.get("slope_percent", 0)
+
+        result = design_foundation(
+            area,
+            soil_type,
+            spt,
+            slope_percent,
+        )
+
+        return jsonify({
+            "success": True,
+            "system": SYSTEM_NAME,
+            "foundation": result,
+        })
+
+    except Exception as exc:
+        audit_log(
+            "FOUNDATION_DESIGN_ERROR",
+            {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+            success=False,
+        )
+
+        return error_response(
+            error="FOUNDATION_DESIGN_ERROR",
+            status_code=500,
+            message="Foundation design failed",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Local development entry point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # No hardcoded secrets - env only per security CODE READY
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
     print(f"Starting {SYSTEM_NAME} v{VERSION} on port {port}")
-    print(f"Meta API base canonical: {META_API_BASE_CANONICAL} - model: {os.getenv('META_MODEL','muse-spark-1.3')}")
-    print(f"Gemini SDK: google-genai - model: {os.getenv('GEMINI_MODEL','gemini-3.8-flash')}")
-    print(f"Evidence > Claims - Repair > Rebuild - One CHAMP > Many Versions")
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    print(f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}")
+    print(f"Meta configured: {meta_configured()}")
+    print(f"Gemini configured: {gemini_configured()}")
+    print(f"Modal configured: {modal_configured()}")
+    print(
+        "Evidence > Claims - Repair > Rebuild - "
+        "One CHAMP > Many Versions"
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=debug,
+    )
