@@ -72,3 +72,60 @@ def test_modal_synthetic_token_format_configuration(monkeypatch):
     assert status["configured"] is True
     assert status["provider"] == "modal"
     assert modal_adapter.is_configured() is True
+def test_meta_success_extracts_message_content(monkeypatch):
+    from adapters import meta_adapter
+
+    class FakeResponse:
+        status_code = 200
+        @staticmethod
+        def json():
+            return {
+                "model": "muse-spark-1.3",
+                "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "Verified landscape explanation", "refusal": None}}],
+                "usage": {"prompt_tokens": 16, "completion_tokens": 491, "total_tokens": 507},
+            }
+
+    captured = {}
+    def fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_synthetic_test_key_123456")
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.setattr(meta_adapter.requests, "post", fake_post)
+    verified = {"soil_type": "Vertisols", "spt_value": 12, "pile_required": True}
+    result = meta_adapter.generate_explanation(verified, "Explain.")
+    assert result["success"] is True
+    assert result["explanation"] == "Verified landscape explanation"
+    assert result["finish_reason"] == "stop"
+    assert result["verified_context_used"] == verified
+    assert captured["url"] == "https://api.meta.ai/v1/chat/completions"
+    assert captured["json"]["model"] == "muse-spark-1.3"
+    assert captured["json"]["max_tokens"] == 1000
+
+
+def test_meta_empty_content_uses_safe_fallback(monkeypatch):
+    from adapters import meta_adapter
+
+    class FakeResponse:
+        status_code = 200
+        @staticmethod
+        def json():
+            return {
+                "model": "muse-spark-1.3",
+                "choices": [{"finish_reason": "length", "message": {"role": "assistant", "content": None, "refusal": None}}],
+                "usage": {"prompt_tokens": 16, "completion_tokens": 300, "total_tokens": 316, "completion_tokens_details": {"reasoning_tokens": 298}},
+            }
+
+    monkeypatch.setenv("MODEL_API_KEY", "LLM_synthetic_test_key_123456")
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.setattr(meta_adapter.requests, "post", lambda *args, **kwargs: FakeResponse())
+    verified = {"soil_type": "Vertisols", "spt_value": 12, "pile_required": True}
+    result = meta_adapter.generate_explanation(verified, "Explain.")
+    assert result["success"] is False
+    assert result["error"] == "EMPTY_MODEL_CONTENT"
+    assert result["finish_reason"] == "length"
+    assert result["source"] == "LOCAL_FALLBACK_EMPTY_CONTENT"
+    assert result["verified_context_used"] == verified
+    assert result["explanation"].startswith("[LOCAL FALLBACK]")

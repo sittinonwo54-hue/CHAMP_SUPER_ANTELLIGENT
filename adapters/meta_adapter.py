@@ -32,6 +32,8 @@ META_API_MODE_CRITICAL = "critical"
 META_API_MODE_STANDARD = "standard"
 META_MODEL_DEFAULT = MODEL_DEFAULT
 
+META_MAX_TOKENS_DEFAULT = 1000
+
 ENV_KEYS = ["MODEL_API_KEY", "META_API_KEY"]
 ENV_MODEL_KEYS = ["META_MODEL", "MODEL_ID", "MODEL_API_MODEL", "META_MODEL_ID"]
 
@@ -116,14 +118,79 @@ def generate_explanation(verified_result: Dict[str, Any], prompt: Optional[str] 
             "messages": [
                 {"role": "system", "content": "You are CHAMP Meta explanation layer. Analyze using ONLY deterministic data. Do not invent numbers. Evidence-first."},
                 {"role": "user", "content": f"Verified result: {verified_result}. Instruction: {prompt or 'Explain clearly.'}"}
-            ]
+            ],
+            "max_tokens": META_MAX_TOKENS_DEFAULT,
         }
         resp = requests.post(_build_url(), json=payload, headers=headers, timeout=30)
-        if resp.status_code == 200:
-            _live_verified = True
-            return {"success": True, "explanation": resp.json(), "verified_context_used": verified_result, "meta_status": get_config_status(), "source": "META_MUSE_SPARK", "http_status": 200}
-        else:
-            return {"success": False, "error": f"META_API_{resp.status_code}", "error_code": f"API_ERROR_{resp.status_code}", "http_status": resp.status_code, "explanation": _fallback_explanation(verified_result), "meta_status": status, "source": f"META_FAILED_{resp.status_code}"}
+        if resp.status_code != 200:
+            return {
+                "success": False,
+                "error": f"META_API_{resp.status_code}",
+                "error_code": f"API_ERROR_{resp.status_code}",
+                "http_status": resp.status_code,
+                "explanation": _fallback_explanation(verified_result),
+                "verified_context_used": verified_result,
+                "meta_status": status,
+                "source": f"META_FAILED_{resp.status_code}",
+                "model": _get_model_id(),
+            }
+
+        try:
+            response_json = resp.json()
+        except ValueError:
+            return {
+                "success": False,
+                "error": "INVALID_META_RESPONSE_JSON",
+                "error_code": "INVALID_META_RESPONSE_JSON",
+                "http_status": 200,
+                "explanation": _fallback_explanation(verified_result),
+                "verified_context_used": verified_result,
+                "meta_status": status,
+                "source": "LOCAL_FALLBACK_INVALID_JSON",
+                "model": _get_model_id(),
+            }
+
+        choices = response_json.get("choices", [])
+        choice = choices[0] if isinstance(choices, list) and choices else {}
+        message = choice.get("message", {}) if isinstance(choice, dict) else {}
+        if not isinstance(message, dict):
+            message = {}
+
+        content = message.get("content")
+        refusal = message.get("refusal")
+        finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else None
+        model = response_json.get("model", _get_model_id())
+        usage = response_json.get("usage", {})
+
+        if not isinstance(content, str) or not content.strip():
+            return {
+                "success": False,
+                "error": "EMPTY_MODEL_CONTENT",
+                "error_code": "EMPTY_MODEL_CONTENT",
+                "http_status": 200,
+                "finish_reason": finish_reason,
+                "refusal": refusal,
+                "explanation": _fallback_explanation(verified_result),
+                "verified_context_used": verified_result,
+                "meta_status": status,
+                "source": "LOCAL_FALLBACK_EMPTY_CONTENT",
+                "model": model,
+                "usage": usage,
+            }
+
+        _live_verified = True
+        return {
+            "success": True,
+            "explanation": content.strip(),
+            "verified_context_used": verified_result,
+            "meta_status": get_config_status(),
+            "source": "META_MUSE_SPARK",
+            "model": model,
+            "finish_reason": finish_reason,
+            "refusal": refusal,
+            "usage": usage,
+            "http_status": 200,
+        }
     except Exception as e:
         return {"success": False, "error": "EXCEPTION", "error_code": "EXCEPTION", "detail": str(e)[:500], "explanation": _fallback_explanation(verified_result), "meta_status": status, "source": "LOCAL_FALLBACK_EXCEPTION"}
 
