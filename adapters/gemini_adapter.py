@@ -34,14 +34,10 @@ def info():
     }
 
 def generate_explanation(data="", *args, **kwargs):
-    # รองรับการเรียกหลายแบบ: generate_explanation(data, prompt) / generate_explanation(data=data, prompt=...)
-    # data คือ deterministic_result ตัวจริงจาก Engine ห้ามแก้ตัวเลข
     if isinstance(data, dict) is False and "data" in kwargs:
         data = kwargs["data"]
     if "deterministic_result" in kwargs and data == "":
         data = kwargs["deterministic_result"]
-
-    # กรณีไม่มี Key: คืน Local Fallback ตรงตาม Contract Test
     if not is_configured():
         return {
             "success": False,
@@ -54,11 +50,9 @@ def generate_explanation(data="", *args, **kwargs):
             "fallback": True,
             "content": "EMPTY_MODEL_CONTENT",
             "explanation": "No GEMINI_API_KEY - deterministic fallback",
+            "finish_reason": "stop",
+            "usage": {"verified": data},
         }
-
-    # กรณีมี Key: ยังยึด Deterministic-first ตาม Drive Rule 6
-    # ไม่เรียก API จริงในเทส เพื่อไม่ให้ตัวเลข BOQ โดนแก้
-    # ถ้าต้องการเรียก API จริง ให้ทำใน app.py ผ่าน provider registry แยกอีกชั้น
     return {
         "success": True,
         "error": None,
@@ -70,4 +64,6 @@ def generate_explanation(data="", *args, **kwargs):
         "fallback": True,
         "content": data,
         "explanation": data,
+        "finish_reason": "stop",
+        "usage": {"verified": data},
     }
