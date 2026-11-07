@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://CHAMP-SUPER-ANTELLIGENT-BACKEND-URL/api/$1"
+    }
+  ]
+}
