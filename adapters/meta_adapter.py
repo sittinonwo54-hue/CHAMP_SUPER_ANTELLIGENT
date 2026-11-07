@@ -21,7 +21,7 @@ def get_config_status():
     configured = is_configured()
     return {
         "configured": configured,
-        "provider": "【entity-meta¦canonical_name=Meta】",
+        "provider": "meta",
         "model": META_MODEL,
         "base": META_API_BASE_CANONICAL,
         "api_base_canonical": META_API_BASE_CANONICAL,
@@ -35,7 +35,7 @@ def get_config_status():
 
 def info():
     return {
-        "provider": "【entity-meta¦canonical_name=Meta】",
+        "provider": "meta",
         "transport": "requests",
         "model": META_MODEL,
         "base": META_API_BASE_CANONICAL,
@@ -131,7 +131,7 @@ def generate_explanation(data="", prompt="", *args, **kwargs):
                 data,
                 error,
                 "LOCAL_FALLBACK",
-                "[LOCAL FALLBACK] 【entity-Meta¦canonical_name=Meta】 HTTP error - deterministic fallback",
+                "[LOCAL FALLBACK] Meta HTTP error - deterministic fallback",
             )
         try:
             parsed = response.json()
@@ -140,7 +140,7 @@ def generate_explanation(data="", prompt="", *args, **kwargs):
                 data,
                 INVALID_META_RESPONSE_JSON,
                 "LOCAL_FALLBACK",
-                "[LOCAL FALLBACK] Invalid JSON from 【entity-Meta¦canonical_name=Meta】 - deterministic fallback",
+                "[LOCAL FALLBACK] Invalid JSON from Meta - deterministic fallback",
             )
         choices = parsed.get("choices", []) if isinstance(parsed, dict) else []
         if choices and isinstance(choices[0], dict):
