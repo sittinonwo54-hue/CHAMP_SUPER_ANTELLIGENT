@@ -8,5 +8,5 @@ def get_config_status():
     return {"configured": bool(token), "model": "Muse Spark Open", "provider": "modal", "base": "https://api.modal.com/v1", "sdk": "google-genai"}
 def generate_explanation(data="", *args, **kwargs):
     if not is_configured():
-        return {"success": False, "error": "MODAL_NOT_CONFIGURED", "source": "LOCAL_FALLBACK", "data": data, "result": data, "deterministic_result": data}
-    return {"success": True, "error": None, "source": "LOCAL_FALLBACK", "data": data, "result": data, "deterministic_result": data}
+        return {"success": False, "error": "MODAL_NOT_CONFIGURED", "source": "LOCAL_FALLBACK", "data": data, "result": data, "deterministic_result": data, "verified_context_used": False, "verified": False, "fallback": True, "content": "EMPTY_MODEL_CONTENT", "explanation": "No MODAL_PROXY_TOKEN - deterministic fallback"}
+    return {"success": True, "error": None, "source": "LOCAL_FALLBACK", "data": data, "result": data, "deterministic_result": data, "verified_context_used": False, "verified": False, "fallback": True, "content": data, "explanation": data}
