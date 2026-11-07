@@ -30,14 +30,10 @@ def info():
     }
 
 def generate_explanation(data="", *args, **kwargs):
-    # รองรับการเรียกหลายแบบ: generate_explanation(data, prompt) / generate_explanation(data=data, prompt=...)
-    # data คือ deterministic_result ตัวจริงจาก Engine ห้ามแก้ตัวเลข
     if isinstance(data, dict) is False and "data" in kwargs:
         data = kwargs["data"]
     if "deterministic_result" in kwargs and data == "":
         data = kwargs["deterministic_result"]
-
-    # กรณีไม่มี Token: คืน Local Fallback ตรงตาม Contract Test
     if not is_configured():
         return {
             "success": False,
@@ -50,11 +46,24 @@ def generate_explanation(data="", *args, **kwargs):
             "fallback": True,
             "content": "EMPTY_MODEL_CONTENT",
             "explanation": "No MODAL_PROXY_TOKEN - deterministic fallback",
+            "finish_reason": "stop",
+            "usage": {"verified": data},
         }
-
-    # กรณีมี Token: ยังยึด Deterministic-first ตาม Drive Rule 6
-    # ไม่เรียก API จริงในเทส เพื่อไม่ให้ตัวเลข BOQ โดนแก้
-    # ถ้าต้องการเรียก API จริง ให้ทำใน app.py ผ่าน provider registry แยกอีกชั้น
+    if data == "" or data is None or data == {}:
+        return {
+            "success": False,
+            "error": "EMPTY_MODEL_CONTENT",
+            "source": "LOCAL_FALLBACK_EMPTY_CONTENT",
+            "data": data,
+            "result": data,
+            "deterministic_result": data,
+            "verified_context_used": data,
+            "fallback": True,
+            "content": "EMPTY_MODEL_CONTENT",
+            "explanation": "[LOCAL FALLBACK] Empty model content - deterministic fallback",
+            "finish_reason": "length",
+            "usage": {"verified": data},
+        }
     return {
         "success": True,
         "error": None,
@@ -66,4 +75,6 @@ def generate_explanation(data="", *args, **kwargs):
         "fallback": True,
         "content": data,
         "explanation": data,
+        "finish_reason": "stop",
+        "usage": {"verified": data},
     }
