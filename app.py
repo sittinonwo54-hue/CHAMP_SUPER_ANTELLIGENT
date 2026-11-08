@@ -146,7 +146,8 @@ def analyze_landscape():
     data=request.get_json(silent=True) or {}
     p=str(data.get("provider","meta")).lower()
     if p not in PROVIDER_REGISTRY:
-        return jsonify({"success":False,"error":"UNSUPPORTED_PROVIDER","error_code":"UNSUPPORTED_PROVIDER","message":"UNSUPPORTED_PROVIDER","errors":["UNSUPPORTED_PROVIDER"],"provider":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"requested_provider":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"provider_requested":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"ai_provider_requested":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"supported_providers":PROVIDER_REGISTRY,"provider_evidence_consistent":False}),400
+        rp = (request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested")
+        return jsonify({"success":False,"error":"UNSUPPORTED_PROVIDER","error_code":"UNSUPPORTED_PROVIDER","message":"UNSUPPORTED_PROVIDER","errors":["UNSUPPORTED_PROVIDER"],"provider":rp,"requested_provider":rp,"provider_requested":rp,"ai_provider_requested":rp,"supported_providers":PROVIDER_REGISTRY,"provider_evidence_consistent":False}),400
     ok, soil, reason, spt = _data_gate_check(data)
     if not ok:
         _append_audit_log("DATA_GATE_4231_BLOCKED", {"soil":soil,"reason":reason,"spt":spt})
@@ -175,7 +176,8 @@ def provider():
     data=request.get_json(silent=True) or {}
     p=str(data.get("provider","")).lower()
     if p not in PROVIDER_REGISTRY:
-        return jsonify({"success":False,"error":"UNSUPPORTED_PROVIDER","error_code":"UNSUPPORTED_PROVIDER","message":"UNSUPPORTED_PROVIDER","errors":["UNSUPPORTED_PROVIDER"],"provider":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"requested_provider":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"provider_requested":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"ai_provider_requested":(request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested"),"supported_providers":PROVIDER_REGISTRY,"provider_evidence_consistent":False}),400
+        rp = (request.get_json(silent=True) or {}).get("provider") or (request.get_json(silent=True) or {}).get("ai_provider") or (request.get_json(silent=True) or {}).get("provider_requested")
+        return jsonify({"success":False,"error":"UNSUPPORTED_PROVIDER","error_code":"UNSUPPORTED_PROVIDER","message":"UNSUPPORTED_PROVIDER","errors":["UNSUPPORTED_PROVIDER"],"provider":rp,"requested_provider":rp,"provider_requested":rp,"ai_provider_requested":rp,"supported_providers":PROVIDER_REGISTRY,"provider_evidence_consistent":False}),400
     return jsonify({"success":True,"provider":p,"configured":_build_health().get(f"{p}_config",{}).get("configured",False),"source":"env_check"}),200
 @app.route("/api/modal", methods=["POST"])
 @app.route("/api/meta", methods=["POST"])
