@@ -48,8 +48,8 @@ AUDIT LOG (audit.py - /tmp/champ_audit.log)
 - POST /api/boq/calculate - BOQ deterministic - VERIFIED via test client when Flask available
 - POST /api/analyze-landscape - full pipeline deterministic + AI explanation - VERIFIED structure
 - GET /api/audit/logs?limit=50 - audit logs - VERIFIED returns /tmp/champ_audit.log
-- POST /api/soil/classify - convenience - VERIFIED
-- POST /api/foundation/design - convenience - VERIFIED
+- POST /api/soil/classify - NOT IMPLEMENTED - DOCUMENTATION ONLY - use /api/analyze-landscape with soil_type
+- POST /api/foundation/design - NOT IMPLEMENTED - DOCUMENTATION ONLY - use /api/boq/calculate
 
 ## Security - VERIFIED
 
@@ -66,7 +66,7 @@ Every claim must match executable evidence - Evidence > Claims
 | Claim | Old Claim | Current Status | Classification | Reason |
 |-------|-----------|----------------|----------------|--------|
 | 135 operational agents | 135 agents operational | 0 orchestration, 6 engines + 2 adapters actual | DOCUMENTATION ONLY | No orchestration in app.py, AGENTS dict only in old docs |
-| 15 controllable subsystems ON/OFF via /api/org/subsystem/*/on/off | 15 subsystems controllable | No such endpoints in app.py - only /, /api/health, /api/boq/calculate, /api/analyze-landscape, /api/audit/logs, /api/soil/classify, /api/foundation/design | DOCUMENTATION ONLY | Design intent per CHAMP_AI_INVENTORY_135_AGENTS... ID 1uwyPaMM... |
+| 15 controllable subsystems ON/OFF via /api/org/subsystem/*/on/off | 15 subsystems controllable | No such endpoints in app.py - only /, /api/health, /api/boq/calculate, /api/analyze-landscape, /api/audit/logs | DOCUMENTATION ONLY | Design intent per CHAMP_AI_INVENTORY_135_AGENTS... ID 1uwyPaMM... |
 | 500 plant species | Plant knowledge 500 species | Actual get_all_plants() returns 10 species | PARTIAL | Limited selection 10-15 vs 500 claim |
 | 100 verified projects | Real Projects 100 | Actual 2 references PJ0014 150sqm 311753 vs runtime 517976 NOT VERIFIED, 88/1 432sqm 320207 base validated 0.03% | PARTIAL | 2 verified, 98 DOCUMENTATION ONLY |
 | 100-item BOQ | BOQ 100 Items ±5% accuracy | Sample 5-10 items actual, base alone 0.03% dev but with add-ons 118.5% over 88/1 invoice 66.1% over PJ0014 | PARTIAL | Structure sample only, pricing Thai market 2024-2025 |
