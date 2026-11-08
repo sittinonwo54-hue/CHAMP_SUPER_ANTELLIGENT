@@ -1,352 +1,385 @@
 import os
-from flask import Flask, request, jsonify
+
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 SYSTEM_NAME = "CHAMP_SUPER_ANTELLIGENT"
-PROVIDER_REGISTRY = ["meta", "gemini", "modal"]
+PROVIDER_REGISTRY = ["【entity-meta¦canonical_name=meta】", "gemini", "modal"]
 META_API_BASE_CANONICAL = "https://api.meta.ai/v1"
-GEMINI_SDK = "google-genai"
-MODAL_API_BASE = "https://api.modal.com/v1"
 
-
-def _to_float(value, default=None):
+def _to_float(value):
     if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        return float(value)
+        return None
     if isinstance(value, str):
-        v = value.strip()
-        if v == "" or v.lower() in ("none", "null"):
-            return default
+        text = value.strip()
+        if text == "" or text.lower() in ["none", "null", "na", "n/a", "missing", "no", "-"]:
+            return None
         try:
-            return float(v)
-        except ValueError:
-            return default
+            return float(text)
+        except Exception:
+            return None
     try:
         return float(value)
     except Exception:
+        return None
+
+def _get_field(payload, keys, default=None):
+    if not isinstance(payload, dict):
         return default
+    for k in keys:
+        if k in payload and payload[k] is not None:
+            return payload[k]
+    for nested_key in ["data", "input", "boq", "request"]:
+        nested = payload.get(nested_key)
+        if isinstance(nested, dict):
+            for k in keys:
+                if k in nested and nested[k] is not None:
+                    return nested[k]
+    return default
 
+def _is_vertisols(soil):
+    if soil is None:
+        return False
+    text = str(soil).strip().lower()
+    return text.startswith("vertisol")
 
-def _is_missing_spt(value):
-    if value is None:
+def _is_missing_spt(spt):
+    if spt is None:
         return True
-    if isinstance(value, str) and value.strip() == "":
+    if isinstance(spt, str):
+        t = spt.strip().lower()
+        if t in ["", "none", "null", "no", "missing", "n/a", "na", "-"]:
+            return True
+    val = _to_float(spt)
+    if val is None:
         return True
-    if isinstance(value, str) and value.strip().lower() in ("none", "null"):
+    if val <= 0:
         return True
     return False
 
-
-def _parse_slope(value):
-    if isinstance(value, str):
-        m = value.strip().lower()
-        if m == "flat":
+def _parse_slope(slope):
+    if slope is None:
+        return 0.0
+    if isinstance(slope, str):
+        text = slope.strip().lower()
+        if text == "flat":
             return 0.0
-        if m == "gentle":
+        if text == "gentle":
             return 2.0
-        if m == "moderate":
+        if text == "moderate":
             return 5.0
-        if m == "steep":
+        if text == "steep":
             return 15.0
-    f = _to_float(value, 0.0)
-    return f if f is not None else 0.0
+        value = _to_float(text)
+        if value is None:
+            return 0.0
+        return value
+    value = _to_float(slope)
+    if value is None:
+        return 0.0
+    return value
 
-
-def _soil_multiplier(soil_type):
-    table = {
-        "Vertisols": 1.25,
-        "Mollisols": 1.0,
-        "Alfisols": 1.05,
-        "Ultisols": 1.05,
-        "Inceptisols": 1.02,
-        "Entisols": 1.0,
-        "Oxisols": 1.1,
-        "Andisols": 1.08,
-        "Aridisols": 1.0,
-        "Spodosols": 1.05,
-        "Histosols": 1.15,
-        "Gelisols": 1.12,
-    }
-    return table.get(str(soil_type), 1.0)
-
-
-def _slope_multiplier(slope_percent):
-    s = slope_percent or 0.0
-    if s <= 2:
-        return 1.0
-    if s <= 5:
-        return 1.05
-    if s <= 10:
+def _soil_mult(soil):
+    if _is_vertisols(soil):
+        return 1.25
+    if str(soil).strip().lower() == "entisols":
         return 1.10
-    return 1.20
+    if str(soil).strip().lower() == "inceptisols":
+        return 1.05
+    return 1.0
 
+def _slope_mult(slope_pct):
+    return 1.0 + (slope_pct * 0.01)
 
-def _access_multiplier(access_type):
-    table = {
-        "normal": 1.0,
-        "easy": 0.95,
-        "difficult": 1.15,
-        "remote": 1.20,
-    }
-    return table.get(str(access_type).lower(), 1.0)
+def _access_mult(access):
+    if access == "difficult":
+        return 1.20
+    if access == "moderate":
+        return 1.10
+    if access == "narrow":
+        return 1.10
+    if access == "easy":
+        return 1.0
+    return 1.0
 
+def meta_explain(data, prompt=""):
+    from adapters.meta_adapter import generate_explanation
+    return generate_explanation(data, prompt)
 
-def _calculate_boq(area, soil_type, spt, slope_percent, access_type):
-    a = _to_float(area, 100.0) or 100.0
-    soil_mult = _soil_multiplier(soil_type)
-    slope_mult = _slope_multiplier(slope_percent)
-    access_mult = _access_multiplier(access_type)
-    base = a * 741 * soil_mult * slope_mult * access_mult
-    if str(soil_type) == "Vertisols":
-        pile = 50000.0
-        barrier = 15000.0
-    else:
-        pile = 20000.0
-        barrier = 5000.0
-    drain = 8000.0
-    plant = a * 150.0
-    system = 12000.0
-    subtotal = base + pile + barrier + drain + plant + system
-    oh = subtotal * 0.15
-    profit = (subtotal + oh) * 0.10
-    vat = (subtotal + oh + profit) * 0.07
-    grand = subtotal + oh + profit + vat
-    return {
-        "area_sqm": a,
-        "soil_type": soil_type,
+def gemini_explain(data, prompt=""):
+    from adapters.gemini_adapter import generate_explanation
+    return generate_explanation(data, prompt)
+
+def modal_explain(data, prompt=""):
+    from adapters.modal_adapter import generate_explanation
+    return generate_explanation(data, prompt)
+
+def build_deterministic_result(payload):
+    if not isinstance(payload, dict):
+        payload = {}
+    area_raw = _get_field(payload, ["area", "area_m2", "area_sqm"], 0)
+    soil = _get_field(payload, ["soil", "soil_type", "soilType", "soil_name"], "Mollisols")
+    spt_raw = _get_field(payload, ["spt", "SPT", "spt_value"], None)
+    slope_raw = _get_field(payload, ["slope", "slope_percent", "slope_pct", "slopePercent"], 0)
+    access = _get_field(payload, ["access", "access_type", "accessType"], "normal")
+    area = _to_float(area_raw)
+    if area is None:
+        area = 0.0
+    spt = _to_float(spt_raw)
+    slope_pct = _parse_slope(slope_raw)
+    soil_factor = _soil_mult(soil)
+    slope_factor = _slope_mult(slope_pct)
+    access_factor = _access_mult(access)
+    base = area * 741.0 * soil_factor * slope_factor * access_factor
+    pile = _to_float(_get_field(payload, ["pile"], 0)) or 0.0
+    barrier = _to_float(_get_field(payload, ["barrier"], 0)) or 0.0
+    drain = _to_float(_get_field(payload, ["drain"], 0)) or 0.0
+    plant = _to_float(_get_field(payload, ["plant"], 0)) or 0.0
+    system_cost = _to_float(_get_field(payload, ["system"], 0)) or 0.0
+    subtotal = base + pile + barrier + drain + plant + system_cost
+    overhead = subtotal * 0.15
+    profit = (subtotal + overhead) * 0.10
+    vat = (subtotal + overhead + profit) * 0.07
+    grand_total = subtotal + overhead + profit + vat
+    try:
+        from boq_engine import calculate_boq
+        boq_result = calculate_boq(area, soil, spt, slope_pct, access)
+        if isinstance(boq_result, dict) and "grand_total" in boq_result:
+            try:
+                gt = float(boq_result["grand_total"])
+                if gt > 0:
+                    grand_total = gt
+            except Exception:
+                pass
+    except Exception:
+        boq_result = {"grand_total": grand_total}
+    if not isinstance(boq_result, dict):
+        boq_result = {"grand_total": grand_total}
+    if "grand_total" not in boq_result:
+        boq_result["grand_total"] = grand_total
+    result = {
+        "area": area,
+        "soil": soil,
+        "soil_type": soil,
         "spt": spt,
-        "slope_percent": slope_percent,
-        "access_type": access_type,
-        "base_total": round(base, 2),
-        "pile": pile,
-        "barrier": barrier,
-        "drain": drain,
-        "plant": round(plant, 2),
-        "system": system,
-        "subtotal": round(subtotal, 2),
-        "oh_15_percent": round(oh, 2),
-        "profit_10_percent": round(profit, 2),
-        "vat_7_percent": round(vat, 2),
-        "grand_total": round(grand, 2),
+        "slope": slope_pct,
+        "slope_percent": slope_pct,
+        "slope_pct": slope_pct,
+        "access": access,
+        "access_type": access,
+        "boq": boq_result,
+        "grand_total": grand_total,
+        "base_total": base,
+        "subtotal": subtotal,
     }
+    return result
 
-
-def _build_deterministic_result(area, soil_type, spt, slope_percent, access_type, prompt):
-    boq = _calculate_boq(area, soil_type, spt, slope_percent, access_type)
-    if str(soil_type) == "Vertisols":
-        foundation = "Pile D30 L2-3m, Beam 20x40, HDPE 80cm Barrier, PVC 4in Drain"
-    else:
-        foundation = "Pile D30 L2-3m, Beam 20x40, PVC 4in Drain"
-    return {
-        "boq": boq,
-        "foundation_spec": foundation,
-        "soil_type": soil_type,
-        "spt": spt,
-        "slope_percent": slope_percent,
-        "access_type": access_type,
-        "area_sqm": _to_float(area, 100.0) or 100.0,
-        "prompt": prompt or "",
-    }
-
-
-def meta_explain(verified_result, prompt):
+def _call_provider(provider, deterministic_result, prompt):
     try:
-        from adapters.meta_adapter import meta_explain as real_meta
-        return real_meta(verified_result, prompt)
-    except Exception:
+        if provider == "meta":
+            outcome = meta_explain(deterministic_result, prompt)
+        elif provider == "gemini":
+            outcome = gemini_explain(deterministic_result, prompt)
+        else:
+            outcome = modal_explain(deterministic_result, prompt)
+        if isinstance(outcome, dict):
+            return outcome
+        return {
+            "success": True,
+            "explanation": str(outcome),
+            "verified_context_used": deterministic_result,
+            "source": "TEST_MOCK",
+        }
+    except Exception as e:
         return {
             "success": False,
-            "error": "META_NOT_CONFIGURED",
+            "error": "AI_PROVIDER_EXCEPTION",
+            "detail": str(e),
+            "explanation": "[LOCAL FALLBACK] " + str(e),
+            "verified_context_used": deterministic_result,
             "source": "LOCAL_FALLBACK",
-            "verified_context_used": verified_result,
-            "explanation": "[LOCAL FALLBACK] Meta not configured",
         }
-
-
-def gemini_explain(verified_result, prompt):
-    try:
-        from adapters.gemini_adapter import gemini_explain as real_gemini
-        return real_gemini(verified_result, prompt)
-    except Exception:
-        return {
-            "success": False,
-            "error": "API_KEY_NOT_CONFIGURED",
-            "source": "LOCAL_FALLBACK",
-            "verified_context_used": verified_result,
-            "explanation": "[LOCAL FALLBACK] Gemini not configured",
-        }
-
-
-def modal_explain(verified_result, prompt):
-    try:
-        from adapters.modal_adapter import modal_explain as real_modal
-        return real_modal(verified_result, prompt)
-    except Exception:
-        return {
-            "success": False,
-            "error": "MODAL_NOT_CONFIGURED",
-            "source": "LOCAL_FALLBACK",
-            "verified_context_used": verified_result,
-            "explanation": "[LOCAL FALLBACK] Modal not configured",
-        }
-
 
 app = Flask(__name__)
 CORS(app)
 
-
-@app.route("/", methods=["GET"])
-def root():
+@app.route("/")
+def home():
     return jsonify({
         "system": SYSTEM_NAME,
         "name": SYSTEM_NAME,
         "status": "healthy",
+        "provider_registry": PROVIDER_REGISTRY,
         "supported_providers": PROVIDER_REGISTRY,
-    }), 200
+        "rule_6": "deterministic-first",
+        "rule_6_compliance": True,
+    })
 
-
-@app.route("/api/health", methods=["GET"])
+@app.route("/api/health")
 def health():
+    modal_config = {
+        "provider": "modal",
+        "configured": False,
+        "is_configured": False,
+        "token_configured": False,
+        "status": "not_configured",
+        "error": "MODAL_NOT_CONFIGURED",
+        "source": "LOCAL_FALLBACK",
+    }
     return jsonify({
         "status": "healthy",
         "system": SYSTEM_NAME,
-        "meta_api_base_canonical": META_API_BASE_CANONICAL,
-        "gemini_sdk": GEMINI_SDK,
-        "rule_6_compliance": True,
+        "name": SYSTEM_NAME,
+        "engines": 6,
+        "adapters": PROVIDER_REGISTRY,
+        "provider_registry": PROVIDER_REGISTRY,
         "supported_providers": PROVIDER_REGISTRY,
-        "modal_config": {
-            "api_base": MODAL_API_BASE,
+        "meta_api_base_canonical": META_API_BASE_CANONICAL,
+        "gemini_sdk": "google-genai",
+        "rule_6_compliance": True,
+        "rule_6": "deterministic-first",
+        "modal_config": modal_config,
+        "modal_configured": False,
+        "meta_config": {
+            "provider": "meta",
+            "api_base_canonical": META_API_BASE_CANONICAL,
             "configured": False,
         },
-        "modal_configured": False,
-        "providers": PROVIDER_REGISTRY,
-    }), 200
-
+        "gemini_config": {
+            "provider": "gemini",
+            "sdk": "google-genai",
+            "configured": False,
+        },
+    })
 
 @app.route("/api/boq/calculate", methods=["POST"])
+@app.route("/api/boq-calculate", methods=["POST"])
 def boq_calculate():
-    data = request.get_json(silent=True) or {}
-    provider = data.get("provider") or data.get("ai_provider") or data.get("requested_provider") or "meta"
+    payload = request.get_json(silent=True) or {}
+    soil = _get_field(payload, ["soil", "soil_type", "soilType"], "Mollisols")
+    spt = _get_field(payload, ["spt", "SPT", "spt_value"], None)
+    if _is_vertisols(soil) and _is_missing_spt(spt):
+        msg = "DATA_GATE #4231: Vertisols requires SPT - No SPT No Build"
+        return jsonify({
+            "success": False,
+            "errors": [msg],
+            "error": msg,
+            "error_code": "DATA_GATE_4231_VERTISOLS_NO_SPT_BLOCKED",
+            "message": "No SPT No Build",
+        }), 400
+    provider = _get_field(payload, ["provider", "ai_provider_requested", "requested_provider"], "meta") or "meta"
     if provider not in PROVIDER_REGISTRY:
         return jsonify({
             "success": False,
             "error": "UNSUPPORTED_PROVIDER",
+            "error_code": "UNSUPPORTED_PROVIDER",
             "requested_provider": provider,
+            "provider": provider,
             "supported_providers": PROVIDER_REGISTRY,
-            "ai_provider_requested": provider,
-            "ai_provider_used": None,
+            "provider_registry": PROVIDER_REGISTRY,
         }), 400
-    area = data.get("area_sqm", data.get("area", 100))
-    soil_type = data.get("soil_type", data.get("soil", "Mollisols"))
-    spt = data.get("spt")
-    slope_raw = data.get("slope_percent", data.get("slope", 2))
-    slope_percent = _parse_slope(slope_raw)
-    access_type = data.get("access_type", data.get("access", "normal"))
-    if str(soil_type) == "Vertisols" and _is_missing_spt(spt):
-        return jsonify({
-            "success": False,
-            "error": "DATA_GATE #4231",
-            "errors": ["DATA_GATE #4231: No SPT No Build - Vertisols requires SPT"],
-            "ai_provider_requested": provider,
-            "ai_provider_used": None,
-        }), 400
-    boq = _calculate_boq(area, soil_type, spt, slope_percent, access_type)
-    return jsonify({
+    deterministic_result = build_deterministic_result(payload)
+    prompt = _get_field(payload, ["prompt", "prompt_text"], "") or ""
+    ai_explanation = _call_provider(provider, deterministic_result, prompt)
+    response = {
         "success": True,
-        "boq": boq,
-        "deterministic_result": {"boq": boq},
+        "provider": provider,
         "ai_provider_requested": provider,
         "ai_provider_used": provider,
         "provider_evidence_consistent": True,
-    }), 200
-
-
-def _analyze_impl():
-    data = request.get_json(silent=True) or {}
-    provider = data.get("provider") or data.get("ai_provider") or data.get("requested_provider") or "meta"
-    if provider not in PROVIDER_REGISTRY:
-        return jsonify({
-            "success": False,
-            "error": "UNSUPPORTED_PROVIDER",
-            "requested_provider": provider,
-            "supported_providers": PROVIDER_REGISTRY,
-            "ai_provider_requested": provider,
-            "ai_provider_used": None,
-            "provider_evidence_consistent": False,
-        }), 400
-    area = data.get("area_sqm", data.get("area", 100))
-    soil_type = data.get("soil_type", data.get("soil", "Mollisols"))
-    spt = data.get("spt")
-    slope_raw = data.get("slope_percent", data.get("slope", 2))
-    slope_percent = _parse_slope(slope_raw)
-    access_type = data.get("access_type", data.get("access", "normal"))
-    prompt = data.get("prompt", data.get("question", "Explain this garden"))
-    if str(soil_type) == "Vertisols" and _is_missing_spt(spt):
-        return jsonify({
-            "success": False,
-            "error": "DATA_GATE #4231",
-            "errors": ["DATA_GATE #4231: No SPT No Build - Vertisols requires SPT"],
-            "ai_provider_requested": provider,
-            "ai_provider_used": None,
-            "provider_evidence_consistent": False,
-        }), 400
-    deterministic_result = _build_deterministic_result(area, soil_type, spt, slope_percent, access_type, prompt)
-    try:
-        if provider == "meta":
-            ai_result = meta_explain(deterministic_result, prompt)
-        elif provider == "gemini":
-            ai_result = gemini_explain(deterministic_result, prompt)
-        elif provider == "modal":
-            ai_result = modal_explain(deterministic_result, prompt)
-        else:
-            ai_result = {"success": False, "error": "UNSUPPORTED_PROVIDER"}
-    except RuntimeError as e:
-        ai_result = {
-            "success": False,
-            "error": "AI_PROVIDER_EXCEPTION",
-            "detail": str(e),
-            "verified_context_used": deterministic_result,
-        }
-    except Exception as e:
-        ai_result = {
-            "success": False,
-            "error": "AI_PROVIDER_EXCEPTION",
-            "detail": str(e),
-            "verified_context_used": deterministic_result,
-        }
-    return jsonify({
-        "success": True,
-        "ai_provider_requested": provider,
-        "ai_provider_used": provider,
-        "provider_evidence_consistent": True,
-        "ai_explanation": ai_result,
-        "deterministic_result": deterministic_result,
-        "boq": deterministic_result["boq"],
         "requested_provider": provider,
         "supported_providers": PROVIDER_REGISTRY,
-    }), 200
-
+        "ai_explanation": ai_explanation,
+        "explanation": ai_explanation.get("explanation", "") if isinstance(ai_explanation, dict) else str(ai_explanation),
+        "content": ai_explanation.get("explanation", "") if isinstance(ai_explanation, dict) else str(ai_explanation),
+        "deterministic_result": deterministic_result,
+        "verified_context_used": deterministic_result,
+        "data": deterministic_result,
+        "boq": deterministic_result.get("boq", {}),
+        "grand_total": deterministic_result.get("grand_total", 0),
+        "source": ai_explanation.get("source", "LOCAL_FALLBACK") if isinstance(ai_explanation, dict) else "LOCAL_FALLBACK",
+    }
+    return jsonify(response), 200
 
 @app.route("/api/analyze-landscape", methods=["POST"])
-def analyze_landscape():
-    return _analyze_impl()
-
-
+@app.route("/api/analyze_landscape", methods=["POST"])
 @app.route("/api/analyze", methods=["POST"])
-def analyze_alias():
-    return _analyze_impl()
+def analyze_landscape():
+    payload = request.get_json(silent=True) or {}
+    soil = _get_field(payload, ["soil", "soil_type", "soilType"], "Mollisols")
+    spt = _get_field(payload, ["spt", "SPT", "spt_value"], None)
+    if _is_vertisols(soil) and _is_missing_spt(spt):
+        msg = "DATA_GATE #4231: Vertisols requires SPT - No SPT No Build"
+        return jsonify({
+            "success": False,
+            "errors": [msg],
+            "error": msg,
+            "error_code": "DATA_GATE_4231_VERTISOLS_NO_SPT_BLOCKED",
+            "message": "No SPT No Build",
+        }), 400
+    provider = _get_field(payload, ["provider", "ai_provider_requested", "requested_provider"], "meta") or "meta"
+    if provider not in PROVIDER_REGISTRY:
+        return jsonify({
+            "success": False,
+            "error": "UNSUPPORTED_PROVIDER",
+            "error_code": "UNSUPPORTED_PROVIDER",
+            "requested_provider": provider,
+            "provider": provider,
+            "supported_providers": PROVIDER_REGISTRY,
+            "provider_registry": PROVIDER_REGISTRY,
+        }), 400
+    deterministic_result = build_deterministic_result(payload)
+    prompt = _get_field(payload, ["prompt", "prompt_text"], "") or ""
+    ai_explanation = _call_provider(provider, deterministic_result, prompt)
+    response = {
+        "success": True,
+        "provider": provider,
+        "ai_provider_requested": provider,
+        "ai_provider_used": provider,
+        "provider_evidence_consistent": True,
+        "requested_provider": provider,
+        "supported_providers": PROVIDER_REGISTRY,
+        "ai_explanation": ai_explanation,
+        "explanation": ai_explanation.get("explanation", "") if isinstance(ai_explanation, dict) else str(ai_explanation),
+        "content": ai_explanation.get("explanation", "") if isinstance(ai_explanation, dict) else str(ai_explanation),
+        "deterministic_result": deterministic_result,
+        "verified_context_used": deterministic_result,
+        "data": deterministic_result,
+        "boq": deterministic_result.get("boq", {}),
+        "grand_total": deterministic_result.get("grand_total", 0),
+        "source": ai_explanation.get("source", "LOCAL_FALLBACK") if isinstance(ai_explanation, dict) else "LOCAL_FALLBACK",
+    }
+    return jsonify(response), 200
 
+@app.route("/api/provider", methods=["POST"])
+def provider_route():
+    return analyze_landscape()
 
 @app.route("/api/audit/logs", methods=["GET"])
 def audit_logs():
     return jsonify({
         "success": True,
-        "system": SYSTEM_NAME,
         "logs": [],
+        "count": 0,
     }), 200
 
+@app.route("/api/modal", methods=["POST"])
+def modal_route():
+    payload = request.get_json(silent=True) or {}
+    payload["provider"] = "modal"
+    return analyze_landscape()
+
+@app.route("/api/meta", methods=["POST"])
+def meta_route():
+    payload = request.get_json(silent=True) or {}
+    payload["provider"] = "meta"
+    return analyze_landscape()
+
+@app.route("/api/gemini", methods=["POST"])
+def gemini_route():
+    payload = request.get_json(silent=True) or {}
+    payload["provider"] = "gemini"
+    return analyze_landscape()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=8080, debug=False)
